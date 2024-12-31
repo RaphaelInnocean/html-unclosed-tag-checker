@@ -1,0 +1,35 @@
+{
+  "name": "html-unclosed-tag-checker",
+  "displayName": "HTML Unclosed Tag Checker",
+  "description": "A simple script that alerts the user when an unclosed tag is found in the HTML.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:html"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [{
+      "command": "html-unclosed-tag-checker.checkTags",
+      "title": "Check HTML Tags"
+    }]
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.96.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "eslint": "^9.16.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1"
+  }
+}
