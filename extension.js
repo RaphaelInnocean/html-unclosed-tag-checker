@@ -1,83 +1,90 @@
 const vscode = require('vscode');
 
 function activate(context) {
-    let disposable = vscode.languages.registerCodeLensProvider('html', {
-        provideCodeLenses(document) {
-            const diagnostics = validateHTML(document.getText());
-            const collection = vscode.languages.createDiagnosticCollection('html-validator');
-            
-            if (diagnostics.length > 0) {
-                collection.set(document.uri, diagnostics);
-            } else {
-                collection.clear();
-            }
-            
-            return [];
+    const diagnosticCollection = vscode.languages.createDiagnosticCollection('html-validator');
+    context.subscriptions.push(diagnosticCollection);
+
+    // Register listener for document changes
+    vscode.workspace.onDidChangeTextDocument((event) => {
+        if (event.document.languageId === 'html') {
+            validateAndUpdateDiagnostics(event.document, diagnosticCollection);
         }
     });
 
-    context.subscriptions.push(disposable);
+    // Register listener for opening documents
+    vscode.workspace.onDidOpenTextDocument((document) => {
+        if (document.languageId === 'html') {
+            validateAndUpdateDiagnostics(document, diagnosticCollection);
+        }
+    });
+
+    // Perform validation on activation
+    vscode.workspace.textDocuments.forEach((document) => {
+        if (document.languageId === 'html') {
+            validateAndUpdateDiagnostics(document, diagnosticCollection);
+        }
+    });
+}
+
+function validateAndUpdateDiagnostics(document, diagnosticCollection) {
+    const diagnostics = validateHTML(document.getText());
+    diagnosticCollection.set(document.uri, diagnostics);
 }
 
 function validateHTML(content) {
     const diagnostics = [];
     const stack = [];
+    const lines = content.split('\n');
 
-    // Define self-closing tags
     const selfClosingTags = new Set([
         'img', 'br', 'hr', 'input', 'meta', 'link', 'area', 'base', 
         'col', 'embed', 'param', 'source', 'track', 'wbr'
     ]);
 
-    // Clean up content
-    content = content.replace(/<!--\[if[\s\S]*?\]>[\s\S]*?<!\[endif\]-->/g, ''); // Conditional comments
-    content = content.replace(/<!--[\s\S]*?-->/g, ''); // Regular comments
-
     const tagPattern = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*\/?>/g;
-    let match;
 
-    while ((match = tagPattern.exec(content)) !== null) {
-        const [fullTag, tagName] = match;
-        const lowercaseTagName = tagName.toLowerCase();
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+        let match;
+        const line = lines[lineNum];
 
-        const isClosingTag = fullTag.startsWith('</');
-        const isSelfClosing = selfClosingTags.has(lowercaseTagName) || fullTag.endsWith('/>');
+        while ((match = tagPattern.exec(line)) !== null) {
+            const [fullTag, tagName] = match;
+            const lowercaseTagName = tagName.toLowerCase();
 
-        if (!isClosingTag && !isSelfClosing) {
-            // Push to stack
-            stack.push({ tagName: lowercaseTagName, index: match.index, fullTag });
-        } else if (isClosingTag) {
-            // Match against stack
-            let found = false;
-            for (let i = stack.length - 1; i >= 0; i--) {
-                if (stack[i].tagName === lowercaseTagName) {
-                    stack.splice(i, 1);
-                    found = true;
-                    break;
+            const isClosingTag = fullTag.startsWith('</');
+            const isSelfClosing = selfClosingTags.has(lowercaseTagName) || fullTag.endsWith('/>');
+
+            if (!isClosingTag && !isSelfClosing) {
+                stack.push({ tagName: lowercaseTagName, line: lineNum, column: match.index, fullTag });
+            } else if (isClosingTag) {
+                let found = false;
+                for (let i = stack.length - 1; i >= 0; i--) {
+                    if (stack[i].tagName === lowercaseTagName) {
+                        stack.splice(i, 1);
+                        found = true;
+                        break;
+                    }
                 }
-            }
-            if (!found) {
-                // No match found
-                diagnostics.push(createDiagnostic(match.index, fullTag.length, `Unexpected closing tag ${fullTag}`));
+                if (!found) {
+                    diagnostics.push(createDiagnostic(lineNum, match.index, fullTag.length, `Unexpected closing tag ${fullTag}`));
+                }
             }
         }
     }
 
-    // Unclosed tags
     for (const tag of stack) {
-        diagnostics.push(createDiagnostic(tag.index, tag.fullTag.length, `Unclosed tag ${tag.fullTag}`));
+        diagnostics.push(createDiagnostic(tag.line, tag.column, tag.fullTag.length, `Unclosed tag ${tag.fullTag}`));
     }
 
     return diagnostics;
 }
 
-
-function createDiagnostic(line, character, length, message) {
+function createDiagnostic(line, column, length, message) {
     const range = new vscode.Range(
-        new vscode.Position(line, character),
-        new vscode.Position(line, character + length)
+        new vscode.Position(line, column),
+        new vscode.Position(line, column + length)
     );
-    
+
     return new vscode.Diagnostic(
         range,
         message,
